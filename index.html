@@ -29,7 +29,6 @@
             text-align: center;
         }
 
-        /* Multiplayer Network Menu Styling */
         #lobby-panel {
             background-color: #1c1c28;
             border: 2px solid #3d3d5c;
@@ -47,6 +46,7 @@
             display: flex;
             justify-content: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         input {
@@ -65,7 +65,7 @@
             width: 100%;
             max-width: 100vw;
             justify-content: center;
-            flex-wrap: wrap; /* Fallback for smaller projector interfaces */
+            flex-wrap: wrap; /* Allows stacking if viewports get tight */
         }
 
         .player-side {
@@ -77,23 +77,22 @@
             flex-direction: column;
             align-items: center;
             min-width: 320px;
+            max-width: 100%;
             flex: 1;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             box-sizing: border-box;
         }
 
-        /* Fixed Left-Hand Cutoff Engine Fixes */
+        /* Responsive Container Fix: Solves Left Cut-Off Boundary Issues */
         .grid-container {
             background-color: #0b0b10;
             padding: 8px;
             border-radius: 8px;
             box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
-            overflow-x: auto; /* Enables touch sliding or scrolling if the screen is narrow */
-            width: 100%; /* Spans full container width */
-            max-width: 100%;
+            overflow-x: auto; /* Enables native swipe/scroll if desktop shrinks */
+            width: 100%; 
             box-sizing: border-box;
-            display: flex;
-            justify-content: flex-start; /* Keeps column 1 explicitly anchored safely */
+            display: block; 
         }
 
         .grid {
@@ -101,8 +100,8 @@
             grid-template-columns: repeat(28, 26px);
             grid-template-rows: repeat(16, 24px);
             gap: 2px;
-            width: max-content; /* Prevents compression crushing left wall tiles */
-            padding-left: 2px;
+            width: max-content; /* Prevents compression of left columns */
+            margin: 0 auto;
         }
 
         .player-side.active-winner { border-color: #4caf50; box-shadow: 0 0 20px rgba(76,175,80,0.3); }
@@ -258,7 +257,7 @@
             <div class="grid-container">
                 <div class="grid" id="remote-grid"></div>
             </div>
-            <div style="margin-top: 10px; font-size: 0.9em; color:#888;">
+            <div style="margin-top: 10px; font-size: 0.85em; color:#888;">
                 (Өрсөлдөгчийн уурхайг бодит цаг хугацаанд харж байна)
             </div>
         </div>
@@ -274,14 +273,12 @@
         const DISCOUNT_RATE = 0.08;
         const BLOCKS_PER_YEAR = 30;
 
-        // Networking configurations
         let client;
         let roomCode = "";
         let isHost = false;
         let myPlayerId = "";
         let opponentConnected = false;
 
-        // Shared Game States
         let baseDepositBlueprint = null;
         let theoreticalOptimalSequence = [];
         let targetMaxNPV = 0;
@@ -289,11 +286,12 @@
         let localState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
         let remoteState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
 
-        // Initialize connection to public MQTT ecosystem endpoint
         function initNetwork() {
             myPlayerId = "client_" + Math.random().toString(16).substr(2, 8);
-            // Connect to a public broker over encrypted websockets
-            client = new Paho.MQTT.Client("broker.hivemq.com", 8000, myPlayerId);
+            
+            // SECURITY FIX: Switched from port 8000 (ws) to secure port 443 (wss) 
+            // This allows the connection to pass GitHub Pages SSL policies.
+            client = new Paho.MQTT.Client("broker.hivemq.com", 443, myPlayerId);
 
             client.onConnectionLost = (responseObject) => {
                 document.getElementById("connection-status").innerText = "Холболт тасарлаа! Хуудсыг дахин ачаална уу.";
@@ -310,7 +308,7 @@
                     document.getElementById("connection-status").style.color = "#4caf50";
                     document.getElementById("lobby-controls").style.display = "block";
                 },
-                useSSL: false,
+                useSSL: true, // Force secure SSL layer protocol compliance
                 cleanSession: true
             });
         }
@@ -341,11 +339,9 @@
                     
                     if (isHost) {
                         display.innerText = `Өрөө үүслээ! Код: ${roomCode}. Өрсөлдөгчөө хүлээж байна...`;
-                        // Host creates layout beforehand
                         baseDepositBlueprint = generateDepositBlueprint();
                     } else {
                         display.innerText = `Өрөөнд холбогдлоо: ${roomCode}. Тоглоом эхэлж байна...`;
-                        // Send ping to host notifying arrival
                         sendNetworkPayload({ type: "JOIN", sender: myPlayerId });
                     }
                 }
@@ -359,14 +355,13 @@
         }
 
         function handleNetworkMessage(data) {
-            if (data.sender === myPlayerId) return; // Ignore own echoes
+            if (data.sender === myPlayerId) return;
 
             switch(data.type) {
                 case "JOIN":
                     if (isHost && !opponentConnected) {
                         opponentConnected = true;
                         document.getElementById("room-display").innerText = "Өрсөлдөгч холбогдлоо! Тэмцээн эхэлж байна.";
-                        // Dispatch shared geological model map to joiner
                         sendNetworkPayload({
                             type: "START_GRID",
                             blueprint: baseDepositBlueprint,
@@ -386,14 +381,12 @@
                     break;
 
                 case "MINE":
-                    // Remotely update opponent block maps inside local UI frame
                     let block = remoteState.grid[data.r][data.c];
                     block.mined = true;
                     remoteState.wallet = data.wallet;
                     remoteState.currentYear = data.year;
                     remoteState.yearMinedCount = data.yearCount;
                     
-                    // Sync values manually downstream inside matrix arrays
                     if (data.yearCount === 0 && data.year > 0) {
                         let calculatedDF = 1 / Math.pow(1 + DISCOUNT_RATE, data.year);
                         for (let row = 0; row < ROWS; row++) {
@@ -416,7 +409,6 @@
             }
         }
 
-        // --- GEOLOGICAL Blueprints GENERATION ---
         function generateDepositBlueprint() {
             let blueprint = [];
             for (let r = 0; r < ROWS; r++) {
@@ -426,9 +418,9 @@
                 }
             }
 
-            let targetHgCount = Math.floor(Math.random() * 6) + 35; // 35+ blocks
+            let targetHgCount = Math.floor(Math.random() * 6) + 35; 
             let hgCluster = [];
-            let startRow = Math.floor(Math.random() * 2) + 4; // Starts bench 4 or 5
+            let startRow = Math.floor(Math.random() * 2) + 4; 
             let startCol = Math.floor(Math.random() * 6) + 11;
             
             blueprint[startRow][startCol] = { type: 'HG', baseValue: 180 };
@@ -438,7 +430,7 @@
             while (hgCluster.length < targetHgCount && safety < 1500) {
                 safety++;
                 let baseBlock = hgCluster[Math.floor(Math.random() * hgCluster.length)];
-                let directions = [[-1, 0], [1, 0], [1, 0], [0, -1], [0, 1]]; // Downward bias
+                let directions = [[-1, 0], [1, 0], [1, 0], [0, -1], [0, 1]]; 
                 let dir = directions[Math.floor(Math.random() * directions.length)];
                 let nR = baseBlock.r + dir[0];
                 let nC = baseBlock.c + dir[1];
@@ -451,7 +443,6 @@
                 }
             }
 
-            // 5-10 low grade blocks mixed into/attached to the core
             let internalLgTarget = Math.floor(Math.random() * 5) + 6;
             let internalLgCount = 0;
             while (internalLgCount < internalLgTarget) {
@@ -473,11 +464,9 @@
             document.getElementById("lobby-panel").style.display = "none";
             document.getElementById("battleground").style.display = "flex";
 
-            // Configure local designations
             document.getElementById("local-title").innerText = isHost ? "Тоглогч 1 (Та)" : "Тоглогч 2 (Та)";
             document.getElementById("remote-title").innerText = isHost ? "Тоглогч 2 (Өрсөлдөгч)" : "Тоглогч 1 (Өрсөлдөгч)";
 
-            // Allocate memory objects
             for (let r = 0; r < ROWS; r++) {
                 localState.grid[r] = [];
                 remoteState.grid[r] = [];
@@ -489,8 +478,8 @@
             }
 
             calculateGlobalOptimalNPV();
-            renderGrid(1); // Local
-            renderGrid(2); // Remote
+            renderGrid(1); 
+            renderGrid(2); 
         }
 
         function renderGrid(playerMode) {
@@ -527,7 +516,6 @@
             let block = localState.grid[r][c];
             if (block.mined) return;
 
-            // Safe geotechnical slope interlock rule
             if (r > 0) {
                 let structuralBlocker = false;
                 for (let dc of [c - 1, c, c + 1]) {
@@ -564,7 +552,6 @@
                 }
             }
 
-            // Sync payload update across network wires to remote target side
             sendNetworkPayload({
                 type: "MINE",
                 r: r, c: c,
@@ -615,17 +602,14 @@
                 let finalLocal = Math.round(localState.wallet);
                 let finalRemote = Math.round(remoteState.wallet);
 
-                // Apply benchmarking visuals to both grids
                 for (let r = 0; r < ROWS; r++) {
                     for (let c = 0; c < COLS; c++) {
                         let optMined = theoreticalOptimalSequence[r][c];
                         
-                        // Eval local matrix visual hints
                         let lEl = document.getElementById(`l-b-${r}-${c}`);
                         if (optMined && !localState.grid[r][c].mined) lEl.classList.add('should-have-mined');
                         if (!optMined && localState.grid[r][c].mined) lEl.classList.add('incorrectly-mined');
 
-                        // Eval remote matrix visual hints
                         let rEl = document.getElementById(`r-b-${r}-${c}`);
                         if (optMined && !remoteState.grid[r][c].mined) rEl.classList.add('should-have-mined');
                         if (!optMined && remoteState.grid[r][c].mined) rEl.classList.add('incorrectly-mined');
@@ -656,7 +640,6 @@
             }
         }
 
-        // --- OPTIMIZATION ALGORITHM (Calculated in background context) ---
         function calculateGlobalOptimalNPV() {
             let simGrid = [];
             for (let r = 0; r < ROWS; r++) {
