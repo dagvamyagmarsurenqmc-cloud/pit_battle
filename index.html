@@ -285,13 +285,13 @@
         let localState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
         let remoteState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
 
-        // ХАМГААЛАЛТТАЙ SSL ХОЛБОЛТЫГ ЭХЛҮҮЛЭХ
+        // СҮЛЖЭЭНИЙ ХОЛБОЛТЫГ ШИНЭЧЛЭХ (Bypass Restrictions)
         function initNetwork() {
             myPlayerId = "client_" + Math.random().toString(16).substr(2, 8);
             
-            // EMQX-ийн албан ёсны хамгаалалттай WSS хост болон порт
-            const brokerHost = "broker.emqx.io";
-            const brokerPort = 8084; // HTTPS-д зориулсан WSS порт
+            // Найдвартай, аюулгүй байдлын block-д өртөхгүй 443 порт ашиглах үндсэн тохиргоо
+            const brokerHost = "broker.hivemq.com";
+            const brokerPort = 8884; // Secure WebSocket TLS Port
             const brokerPath = "/mqtt";
 
             client = new Paho.MQTT.Client(brokerHost, brokerPort, brokerPath, myPlayerId);
@@ -308,18 +308,38 @@
 
             client.connect({
                 onSuccess: () => {
-                    document.getElementById("connection-status").innerText = "Серверт холбогдлоо! Өрөөгөө сонгоно уу.";
+                    document.getElementById("connection-status").innerText = "Серверт амжилттай холбогдлоо! Өрөөгөө сонгоно уу.";
                     document.getElementById("connection-status").style.color = "#4caf50";
                     document.getElementById("lobby-controls").style.display = "block";
                 },
                 onFailure: (err) => {
                     console.error("MQTT Connection Error: ", err);
-                    document.getElementById("connection-status").innerText = "Сүлжээний алдаа. Холболт амжилтгүй.";
+                    // Нөөц холболтын хувилбар
+                    tryAlternateConnection();
+                },
+                useSSL: true,
+                timeout: 5,
+                cleanSession: true,
+                keepAliveInterval: 30
+            });
+        }
+
+        function tryAlternateConnection() {
+            document.getElementById("connection-status").innerText = "Нөөц суваг руу шилжиж байна...";
+            client = new Paho.MQTT.Client("broker.emqx.io", 443, "/mqtt", myPlayerId); // 443 стандарт HTTPS порт
+            client.onMessageArrived = (message) => handleNetworkMessage(JSON.parse(message.payloadString));
+            client.connect({
+                onSuccess: () => {
+                    document.getElementById("connection-status").innerText = "Нөөц серверт холбогдлоо!";
+                    document.getElementById("connection-status").style.color = "#4caf50";
+                    document.getElementById("lobby-controls").style.display = "block";
+                },
+                onFailure: (err) => {
+                    document.getElementById("connection-status").innerText = "Сүлжээний алдаа: Порт хаалттай байна. Прокси устгана уу.";
                     document.getElementById("connection-status").style.color = "#ef5350";
                 },
-                useSSL: true, // HTTPS дээр алдаа гаргахгүй ажиллуулах үндсэн тохиргоо
-                timeout: 10,
-                cleanSession: true
+                useSSL: true,
+                timeout: 5
             });
         }
 
@@ -341,7 +361,7 @@
         }
 
         function subscribeToRoom() {
-            client.subscribe("pit_arena_v2/" + roomCode, {
+            client.subscribe("pit_arena_v3/" + roomCode, {
                 onSuccess: () => {
                     document.getElementById("lobby-controls").style.display = "none";
                     const display = document.getElementById("room-display");
@@ -360,7 +380,7 @@
 
         function sendNetworkPayload(payload) {
             let message = new Paho.MQTT.Message(JSON.stringify(payload));
-            message.destinationName = "pit_arena_v2/" + roomCode;
+            message.destinationName = "pit_arena_v3/" + roomCode;
             client.send(message);
         }
 
