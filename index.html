@@ -5,7 +5,6 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pit Design Arena: Online 1v1 Battle</title>
-    <!-- Standard Paho MQTT Client Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
     <style>
         body {
@@ -84,7 +83,6 @@
             box-sizing: border-box;
         }
 
-        /* Responsive Container Layout Engine */
         .grid-container {
             background-color: #0b0b10;
             padding: 8px;
@@ -229,7 +227,6 @@
     </div>
 
     <div id="battleground" style="display: none;">
-        <!-- LEFT SIDE -->
         <div class="player-side" id="local-side">
             <div class="player-header local-player-color" id="local-title">Таны тал</div>
             <div class="dashboard">
@@ -247,7 +244,6 @@
             </div>
         </div>
 
-        <!-- RIGHT SIDE -->
         <div class="player-side" id="remote-side">
             <div class="player-header remote-player-color" id="remote-title">Өрсөлдөгч</div>
             <div class="dashboard">
@@ -289,33 +285,21 @@
         let localState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
         let remoteState = { wallet: 0, currentYear: 0, yearMinedCount: 0, totalMinedCount: 0, isFinalized: false, grid: [] };
 
-        // REDUNDANT FAILOVER ROUTING STRATEGY
+        // INITIALIZE STABLE EMQX WEB-SOCKET ENDPOINT
         function initNetwork() {
             myPlayerId = "client_" + Math.random().toString(16).substr(2, 8);
-            trySecureConnect("broker.hivemq.com", "/mqtt", () => {
-                // Success callback
-                document.getElementById("connection-status").innerText = "Холболт амжилттай. Өрөөгөө сонгоно уу.";
-                document.getElementById("connection-status").style.color = "#4caf50";
-                document.getElementById("lobby-controls").style.display = "block";
-            }, () => {
-                // Primary endpoint failure callback -> Switch to fallback server path immediately
-                document.getElementById("connection-status").innerText = "Нөөц сервер рүү шилжиж байна...";
-                trySecureConnect("mqtt-dashboard.com", "/mqtt", () => {
-                    document.getElementById("connection-status").innerText = "Холболт амжилттай (Нөөц сервер). Өрөөгөө сонгоно уу.";
-                    document.getElementById("connection-status").style.color = "#4caf50";
-                    document.getElementById("lobby-controls").style.display = "block";
-                }, () => {
-                    document.getElementById("connection-status").innerText = "Сүлжээний алдаа. Прокси эсвэл хөтчөө шалгана уу.";
-                    document.getElementById("connection-status").style.color = "#ef5350";
-                });
-            });
-        }
+            
+            // Connect to EMQX Premium Web-Socket cluster on SSL port 8084
+            const brokerHost = "broker.emqx.io";
+            const brokerPort = 8084;
+            const brokerPath = "/mqtt";
 
-        function trySecureConnect(host, path, successCallback, failureCallback) {
-            client = new Paho.MQTT.Client(host, 443, path, myPlayerId);
+            client = new Paho.MQTT.Client(brokerHost, brokerPort, brokerPath, myPlayerId);
 
             client.onConnectionLost = (responseObject) => {
-                console.log("Disconnected status code:", responseObject.errorCode);
+                console.log("Disconnected code:", responseObject.errorCode);
+                document.getElementById("connection-status").innerText = "Холболт тасарлаа. Дахин ачаална уу.";
+                document.getElementById("connection-status").style.color = "#ef5350";
             };
 
             client.onMessageArrived = (message) => {
@@ -323,10 +307,18 @@
             };
 
             client.connect({
-                onSuccess: successCallback,
-                onFailure: failureCallback,
+                onSuccess: () => {
+                    document.getElementById("connection-status").innerText = "Холболт амжилттай! Өрөөгөө сонгоно уу.";
+                    document.getElementById("connection-status").style.color = "#4caf50";
+                    document.getElementById("lobby-controls").style.display = "block";
+                },
+                onFailure: (err) => {
+                    console.error("MQTT Error: ", err);
+                    document.getElementById("connection-status").innerText = "Сүлжээний алдаа. Нөөц зам хаагдсан байна.";
+                    document.getElementById("connection-status").style.color = "#ef5350";
+                },
                 useSSL: true,
-                timeout: 5,
+                timeout: 10,
                 cleanSession: true
             });
         }
